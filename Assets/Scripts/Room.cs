@@ -6,14 +6,10 @@ public class Room : MonoBehaviour
 {
     public const int WIDTH = 38;
     public const int HEIGHT = 32;
-    public const float DISTANCE_WALL = 2;
-    public const float DISTANCE_PIT = -5;
+    public const float DISTANCE_WALL = 1;
+    public const float DISTANCE_PIT = -3;
     public int dimensions = WIDTH * HEIGHT;
     public int layerDifference = (WIDTH * HEIGHT) + HEIGHT + WIDTH + 1;
-
-    private Vector3[] verts;
-    private int[] tris;
-    private Vector2[] uv;
 
     private int[] layerTerrain = new int[] {
         2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
@@ -55,110 +51,166 @@ public class Room : MonoBehaviour
 
     private Mesh mesh;
     private MeshFilter meshFilter;
+    private MeshRenderer meshRender;
+
+    private enum Shapes { FloorSqr, RectWall };
 
     void Start()
     {
-        // Plot vertices. It's simply three layers of (width + 1) by (height + 1) rectangles with each vert aligned to the unit grid
-        List<Vector3> newVerts = new List<Vector3>();
-        for (int l = 0; l < 3; l++)
+        List<Vector3> verts = new List<Vector3>();
+        List<int> tris = new List<int>();
+        List<Vector2> uv = new List<Vector2>();
+        Vector2 index2D = Vector2.zero;
+        for (int i = 0; i < layerTerrain.Length; i++)
         {
-            for (int y = HEIGHT; y >= 0; y--)
+            int currentIndex = verts.Count;
+            switch (layerTerrain[i])
             {
-                for (int x = 0; x <= WIDTH; x++)
-                {
-                    newVerts.Add(new Vector3(x - (WIDTH * 0.5f), l switch { 0 => DISTANCE_PIT, 2 => DISTANCE_WALL, _ => 0 }, y - (HEIGHT * 0.5f)));
-                }
+                case 0:
+                    verts = AddVerts(Shapes.FloorSqr, new Vector3(index2D.x - (WIDTH * 0.5f), DISTANCE_PIT, -index2D.y + (HEIGHT * 0.5f)),
+                        new Vector3(1, 0, -1), verts);
+                    tris = AddTris(tris, currentIndex);
+                    uv = StyleManager.GetTileUV(StyleManager.Tiles.Pit, uv);
+                    currentIndex += 4;
+
+                    if (i < WIDTH || (i >= WIDTH && layerTerrain[i - WIDTH] != 0))
+                    {
+                        verts = AddVerts(Shapes.RectWall, new Vector3(index2D.x - (WIDTH * 0.5f) + 1, 0, -index2D.y + (HEIGHT * 0.5f) + 1),
+                            new Vector3(-1, -DISTANCE_PIT, 0), verts);
+                        tris = AddTris(tris, currentIndex);
+                        uv = StyleManager.GetTileUV(StyleManager.Tiles.PitWall, uv);
+                        currentIndex += 4;
+                    }
+                    if (i % WIDTH == 0 || layerTerrain[i - 1] != 0)
+                    {
+                        verts = AddVerts(Shapes.RectWall, new Vector3(index2D.x - (WIDTH * 0.5f), 0, -index2D.y + (HEIGHT * 0.5f) + 1),
+                            new Vector3(0, -DISTANCE_PIT, -1), verts);
+                        tris = AddTris(tris, currentIndex);
+                        uv = StyleManager.GetTileUV(StyleManager.Tiles.PitWall, uv);
+                        currentIndex += 4;
+                    }
+                    if ((i + 1) % WIDTH == 0 || layerTerrain[i + 1] != 0)
+                    {
+                        verts = AddVerts(Shapes.RectWall, new Vector3(index2D.x - (WIDTH * 0.5f) + 1, 0, -index2D.y + (HEIGHT * 0.5f)),
+                            new Vector3(0, -DISTANCE_PIT, 1), verts);
+                        tris = AddTris(tris, currentIndex);
+                        uv = StyleManager.GetTileUV(StyleManager.Tiles.PitWall, uv);
+                        currentIndex += 4;
+                    }
+                    if ((i > dimensions - WIDTH - 1) || (i <= dimensions - WIDTH - 1 && layerTerrain[i + WIDTH] != 0))
+                    {
+                        verts = AddVerts(Shapes.RectWall, new Vector3(index2D.x - (WIDTH * 0.5f), 0, -index2D.y + (HEIGHT * 0.5f)),
+                            new Vector3(1, -DISTANCE_PIT, 0), verts);
+                        tris = AddTris(tris, currentIndex);
+                        uv = StyleManager.GetTileUV(StyleManager.Tiles.PitWall, uv);
+                    }
+                    break;
+                default:
+                case 1:
+                    verts = AddVerts(Shapes.FloorSqr, new Vector3(index2D.x - (WIDTH * 0.5f), 0, -index2D.y + (HEIGHT * 0.5f)),
+                        new Vector3(1, 0, -1), verts);
+                    tris = AddTris(tris, currentIndex);
+                    if ((index2D.x % 2 == 0 && index2D.y % 2 == 0) || (index2D.x % 2 == 1 && index2D.y % 2 == 1))
+                        uv = StyleManager.GetTileUV(StyleManager.Tiles.Floor1, uv);
+                    else
+                        uv = StyleManager.GetTileUV(StyleManager.Tiles.Floor2, uv);
+                    break;
+                case 2:
+                    verts = AddVerts(Shapes.FloorSqr, new Vector3(index2D.x - (WIDTH * 0.5f), DISTANCE_WALL, -index2D.y + (HEIGHT * 0.5f)),
+                      new Vector3(1, 0, -1), verts);
+                    tris = AddTris(tris, currentIndex);
+                    uv = StyleManager.GetTileUV(StyleManager.Tiles.Wall, uv);
+                    currentIndex += 4;
+
+                    if (i < WIDTH || (i >= WIDTH && layerTerrain[i - WIDTH] != 2))
+                    {
+                        verts = AddVerts(Shapes.RectWall, new Vector3(index2D.x - (WIDTH * 0.5f), DISTANCE_WALL, -index2D.y + (HEIGHT * 0.5f) + 1),
+                            new Vector3(1, DISTANCE_WALL, 0), verts);
+                        tris = AddTris(tris, currentIndex);
+                        uv = StyleManager.GetTileUV(StyleManager.Tiles.WallSide, uv);
+                        currentIndex += 4;
+                    }
+                    if (i % WIDTH == 0 || layerTerrain[i - 1] != 2)
+                    {
+                        verts = AddVerts(Shapes.RectWall, new Vector3(index2D.x - (WIDTH * 0.5f), DISTANCE_WALL, -index2D.y + (HEIGHT * 0.5f)),
+                            new Vector3(0, DISTANCE_WALL, 1), verts);
+                        tris = AddTris(tris, currentIndex);
+                        uv = StyleManager.GetTileUV(StyleManager.Tiles.WallSide, uv);
+                        currentIndex += 4;
+                    }
+                    if ((i + 1) % WIDTH == 0 || layerTerrain[i + 1] != 2)
+                    {
+                        verts = AddVerts(Shapes.RectWall, new Vector3(index2D.x - (WIDTH * 0.5f) + 1, DISTANCE_WALL, -index2D.y + (HEIGHT * 0.5f) + 1),
+                            new Vector3(0, DISTANCE_WALL, -1), verts);
+                        tris = AddTris(tris, currentIndex);
+                        uv = StyleManager.GetTileUV(StyleManager.Tiles.WallSide, uv);
+                        currentIndex += 4;
+                    }
+                    if ((i > dimensions - WIDTH - 1) || (i <= dimensions - WIDTH - 1 && layerTerrain[i + WIDTH] != 2))
+                    {
+                        verts = AddVerts(Shapes.RectWall, new Vector3(index2D.x - (WIDTH * 0.5f) + 1, DISTANCE_WALL, -index2D.y + (HEIGHT * 0.5f)),
+                            new Vector3(-1,  DISTANCE_WALL, 0), verts);
+                        tris = AddTris(tris, currentIndex);
+                        uv = StyleManager.GetTileUV(StyleManager.Tiles.WallSide, uv);
+                    }
+                    break;
+            }
+            index2D.x++;
+            if (index2D.x == WIDTH)
+            {
+                index2D.x = 0;
+                index2D.y++;
             }
         }
-        verts = newVerts.ToArray();
-
-        // Plot triangles.
-        List<int> newTris = new List<int>();
-        int j = 0;
-        int k = 0;
-        // Firstly, we determine the current height to draw a surface on, then draw a square in the current tile
-        for (int i = 0; i < dimensions; i++)
-        {
-            int thisIndex = k + (layerDifference * layerTerrain[i]);
-            newTris.Add(thisIndex);
-            newTris.Add(thisIndex + 1);
-            newTris.Add(thisIndex + 1 + WIDTH);
-            newTris.Add(thisIndex + 1);
-            newTris.Add(thisIndex + 2 + WIDTH);
-            newTris.Add(thisIndex + 1 + WIDTH);
-
-            j++;
-            k++;
-            if (j == WIDTH)
-            {
-                j = 0;
-                k++;
-            }
-        }
-        j = 0;
-        k = 0;
-        // Secondly, we cycle through every tile and analyze each cardinally-adjacent tile to determine if and where to draw walls
-        for (int i = 0; i < dimensions; i++)
-        {
-            if (layerTerrain[i] == 0)
-            {
-                if (i < WIDTH)
-                    newTris = DrawWall(newTris, false, 0, k);
-                else if (layerTerrain[i - WIDTH] != 0)
-                    newTris = DrawWall(newTris, false, 0, k);
-
-                if (i % WIDTH == 0 || layerTerrain[i - 1] != 0)
-                    newTris = DrawWall(newTris, false, 1, k);
-
-                if ((i + 1) % WIDTH == 0 || layerTerrain[i + 1] != 0)
-                    newTris = DrawWall(newTris, false, 2, k);
-
-                if (i > dimensions - WIDTH - 1)
-                    newTris = DrawWall(newTris, false, 3, k);
-                else if (layerTerrain[i + WIDTH] != 0)
-                    newTris = DrawWall(newTris, false, 3, k);
-            }
-            else if (layerTerrain[i] == 2)
-            {
-                if (i < WIDTH)
-                    newTris = DrawWall(newTris, true, 0, k);
-                else if (layerTerrain[i - WIDTH] != 2)
-                    newTris = DrawWall(newTris, true, 0, k);
-
-                if (i % WIDTH == 0 || layerTerrain[i - 1] != 2)
-                    newTris = DrawWall(newTris, true, 1, k);
-
-                if ((i + 1) % WIDTH == 0 || layerTerrain[i + 1] != 2)
-                    newTris = DrawWall(newTris, true, 2, k);
-
-                if (i > dimensions - WIDTH - 1)
-                    newTris = DrawWall(newTris, true, 3, k);
-                else if (layerTerrain[i + WIDTH] != 2)
-                    newTris = DrawWall(newTris, true, 3, k);
-            }
-
-            j++;
-            k++;
-            if (j == WIDTH)
-            {
-                j = 0;
-                k++;
-            }
-        }
-        tris = newTris.ToArray();
 
         meshFilter = GetComponent<MeshFilter>();
+        meshRender = GetComponent<MeshRenderer>();
         mesh = new Mesh
         {
-            vertices = verts,
-            triangles = tris
+            vertices = verts.ToArray(),
+            triangles = tris.ToArray(),
+            uv = uv.ToArray()
         };
         meshFilter.mesh = mesh;
+        meshRender.material = new Material(Shader.Find("Standard"));
+        meshRender.material.mainTexture = StyleManager.GetSheet();
     }
 
     void Update()
     {
         
+    }
+
+    private List<Vector3> AddVerts(Shapes shape, Vector3 topLeft, Vector3 bottomRightOffset, List<Vector3> currentList)
+    {
+        switch (shape)
+        {
+            default:
+            case Shapes.FloorSqr:
+                currentList.Add(topLeft);
+                currentList.Add(new Vector3(topLeft.x + bottomRightOffset.x, topLeft.y, topLeft.z));
+                currentList.Add(new Vector3(topLeft.x + bottomRightOffset.x, topLeft.y, topLeft.z - bottomRightOffset.z));
+                currentList.Add(new Vector3(topLeft.x, topLeft.y, topLeft.z - bottomRightOffset.z));
+                break;
+            case Shapes.RectWall:
+                currentList.Add(topLeft);
+                currentList.Add(new Vector3(topLeft.x + bottomRightOffset.x, topLeft.y, topLeft.z + bottomRightOffset.z));
+                currentList.Add(new Vector3(topLeft.x + bottomRightOffset.x, topLeft.y - bottomRightOffset.y, topLeft.z + bottomRightOffset.z));
+                currentList.Add(new Vector3(topLeft.x, topLeft.y - bottomRightOffset.y, topLeft.z));
+                break;
+        }
+        return currentList;
+    }
+
+    private List<int> AddTris(List<int> currentList, int currentIndex)
+    {
+        currentList.Add(currentIndex);
+        currentList.Add(currentIndex + 2);
+        currentList.Add(currentIndex + 1);
+        currentList.Add(currentIndex + 2);
+        currentList.Add(currentIndex);
+        currentList.Add(currentIndex + 3);
+        return currentList;
     }
 
     private List<int> DrawWall(List<int> currentList, bool layer, int direction, int tile)
